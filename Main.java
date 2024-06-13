@@ -12,12 +12,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 class DynamicClassLoader extends URLClassLoader {
     // Simplified to avoid importing all of clojure
-    static ConcurrentHashMap<String, Reference<Class>> classCache = new ConcurrentHashMap();
-    static final URL[] EMPTY_URLS = new URL[0];
-    static final ReferenceQueue rq = new ReferenceQueue();
-
     public DynamicClassLoader(ClassLoader parent) {
-        super(EMPTY_URLS, parent);
+        super(new URL[0], parent);
     }
 }
 
@@ -28,6 +24,7 @@ public class Main {
 
     public static ClassLoader baseLoader() {
         // Simplified to avoid importing all of clojure
+        System.out.println("baseLoader: " + Thread.currentThread().getContextClassLoader());
         return Thread.currentThread().getContextClassLoader();
     }
 
@@ -40,10 +37,12 @@ public class Main {
     }
 
     public static ClassLoader appLoader() {
+
         return ClassLoader.getSystemClassLoader();
     }
 
     public static DynamicClassLoader rootLoader() {
+        System.out.println("rootLoader: " + baseLoader());
         return rootLoader(baseLoader());
     }
 
@@ -55,6 +54,8 @@ public class Main {
         ClassLoader loader = cl;
         while (true) {
             ClassLoader parent = loader.getParent();
+            System.out.println("parent-checks: " + isDynamicClassLoader(parent) + " " + isPriorityClassLoader(parent));
+            System.out.println("loader-checks: " + isDynamicClassLoader(loader) + " " + isPriorityClassLoader(loader));
             if (isDynamicClassLoader(parent) || isPriorityClassLoader(parent)) {
                 loader = parent;
             } else if (isDynamicClassLoader(loader) || isPriorityClassLoader(loader)) {
@@ -96,25 +97,30 @@ public class Main {
                 0, 1000, TimeUnit.MILLISECONDS);
 
         Thread currentThread = Thread.currentThread();
-        CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-            try {
-                Thread.sleep(100);
-            } catch (InterruptedException e) {
-                e.printStackTrace();
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+
+        Set<Thread> threads = Thread.getAllStackTraces().keySet();
+        ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
+
+        for (Thread thread : threads) {
+            if (thread == currentThread
+                    || rootLoader(thread.getContextClassLoader()) != null
+                    || thread.getContextClassLoader() == appLoader()) {
+                System.out.println("check0: " + (thread == currentThread));
+                System.out.println("check1: " + (rootLoader(thread.getContextClassLoader()) != null));
+                System.out.println("check2: " + (thread.getContextClassLoader() == appLoader()));
+                System.out.println("thread: " + thread.getName() + " of classloader " + rootLoader(thread.getContextClassLoader()));
+                System.out.println("thread: " + currentThread.getName() + " of classloader " + rootLoader(currentThread.getContextClassLoader()));
+                System.out.println("classloader: " + currentThread.getContextClassLoader());
+                System.out.println("appLoader: " + appLoader());
+                System.out.println("foo: " + appLoader().getName());
+                System.out.println("thread: " + thread.getName() + " of class " + thread.getClass());
+                thread.setContextClassLoader(classLoader);
             }
-
-            Set<Thread> threads = Thread.getAllStackTraces().keySet();
-            ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-
-            for (Thread thread : threads) {
-                if (thread == currentThread
-                        || rootLoader(thread.getContextClassLoader()) != null
-                        || thread.getContextClassLoader() == appLoader()) {
-                    thread.setContextClassLoader(classLoader);
-                }
-            }
-        });
-
-        future.join();
+        }
     }
 }
